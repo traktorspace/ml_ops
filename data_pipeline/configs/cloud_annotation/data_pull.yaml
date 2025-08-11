@@ -1,0 +1,32 @@
+defaults:
+  - _self_
+
+project_name: Cloud Annotation
+hydra:
+  run:
+    dir: ${hydra:runtime.cwd}/logs/hydra/pull/${now:%Y-%m-%d}/${now:%H-%M-%S}
+  output_subdir: null
+
+criteria:
+  artifact_destination: ${as_path:/bigdata/datasets_analytics/clouds/hf1a_reflectance/pipeline_test}
+  prod_selection_query: data_pipeline.utils.db_queries.fetch_encord_uploaded_but_not_downloaded_products_from_annotation_db
+
+logging:
+  logdir: ${as_path:${hydra:runtime.cwd}/logs/scripts/pull}
+  console_fmt: >-
+    <green>{time:YYYY/MM/DD-HH:mm:ss!UTC}</green> |
+    <level>{level: <8}</level> |
+    <cyan>{name}:{function}:{line}</cyan> -
+    <level>{message}</level>
+  file_fmt: "{time:YYYY MM DD HH:mm:ss!UTC} | {level: <8} | {message}"
+  noisy_pkgs:
+    - encord
+    - frame-aligner
+
+job_processor:
+  query_success: data_pipeline.utils.db_queries.mark_annotation_processed
+  query_failure: data_pipeline.utils.db_queries.write_exception
+  allow_overwriting: true 
+
+secrets:
+  dotenv: ${hydra:runtime.cwd}/configs/cloud_annotation/.env
