@@ -1,3 +1,4 @@
+import io
 from dataclasses import dataclass, field
 from pathlib import Path
 from shutil import rmtree
@@ -85,6 +86,45 @@ class JobStats:
             lines.append('')
 
         return '\n'.join(lines).rstrip()
+
+    def as_text_buffers(self) -> dict[str, io.BytesIO]:
+        """
+        Return one BytesIO per non-empty bucket.
+        The buffer's .name is set so libraries such as slack-sdk
+        use it as the file name.
+
+        Example returned value
+        ----------------------
+        {
+            'annotation_not_found.txt': <BytesIO>,
+            'correctly_processed.txt': <BytesIO>,
+            ...
+        }
+        """
+        buffers: dict[str, io.BytesIO] = {}
+
+        def _make_buffer(name: str, lines: list[str]) -> io.BytesIO:
+            # trailing '\n' so final line gets its own newline in viewers
+            raw = ('\n'.join(lines) + '\n').encode('utf-8')
+            buf = io.BytesIO(raw)
+            buf.seek(0)
+            buf.name = f'{name}.txt'  # slack_sdk looks at .name
+            return buf
+
+        # regular buckets
+        for bucket in self.__annotations__:  # keep declaration order
+            items: list[str] = getattr(self, bucket)
+            if items:  # skip empty ones
+                buffers[bucket] = _make_buffer(bucket, sorted(items))
+
+        # extra check
+        missing = self._bad_shape_unprocessed()
+        if missing:
+            buffers['bad_shape_unprocessed'] = _make_buffer(
+                'bad_shape_unprocessed', sorted(missing)
+            )
+
+        return buffers
 
 
 @dataclass(slots=True)

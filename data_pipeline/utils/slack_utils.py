@@ -102,6 +102,7 @@ def upload_file_to_channel(
     channel_id: str | None = None,
     title: str | None = None,
     initial_comment: str | None = None,
+    thread_ts: str | None = None,
 ) -> dict:
     """
     Upload `file_bytes` to Slack using the getUploadURLExternal / completeUploadExternal
@@ -124,7 +125,14 @@ def upload_file_to_channel(
         Title shown in Slack (defaults to `filename`).
     initial_comment :
         Comment to accompany the file (optional).
+    thread_ts :
+        If provided, the file is posted as a reply to this
+        parent-message timestamp (i.e. inside that thread).
+        Requires `channel_id` to be set as well.
     """
+    if thread_ts and not channel_id:
+        raise ValueError('thread_ts requires channel_id')
+
     size_bytes = buffer.getbuffer().nbytes
 
     # Step 1 - request to upload
@@ -162,6 +170,8 @@ def upload_file_to_channel(
         payload['channel_id'] = channel_id
     if initial_comment:
         payload['initial_comment'] = initial_comment
+    if thread_ts:
+        payload['thread_ts'] = thread_ts
 
     r3 = requests.post(
         'https://slack.com/api/files.completeUploadExternal',

@@ -55,7 +55,7 @@ from data_pipeline.utils.path_utils import (
 )
 from data_pipeline.utils.slack_utils import (
     post_new_message_and_get_thread_id,
-    reply_in_thread,
+    upload_file_to_channel,
     wrap_msg_with_project_name,
 )
 
@@ -239,12 +239,6 @@ def main(
                 f'Analyzed {len(job_dict)} products\n{time_msg}'
             )
 
-            stats_md = processor.stats.as_markdown()
-            stats_msg = (
-                f'\n\n_Stats:_\n{stats_md}'
-                if stats_md
-                else 'No stats available'
-            )
             thread_id = post_new_message_and_get_thread_id(
                 text=wrap_msg_with_project_name(
                     msg=success_msg,
@@ -253,12 +247,17 @@ def main(
                 slack_bot_token=env['SLACK_OAUTH'],
                 channel_id=env['SLACK_CHANNEL'],
             )
-            reply_in_thread(
-                text=stats_msg,
-                thread_ts=thread_id,
-                slack_bot_token=env['SLACK_OAUTH'],
-                channel_id=env['SLACK_CHANNEL'],
-            )
+            buffers = processor.stats.as_text_buffers()
+            for name, filebuf in buffers.items():
+                upload_file_to_channel(
+                    buffer=filebuf,
+                    filename=filebuf.name,
+                    token=env['SLACK_OAUTH'],
+                    channel_id=env['SLACK_CHANNEL'],
+                    initial_comment='',
+                    thread_ts=thread_id,
+                )
+
             mismatching_products = mismatched_products(
                 cfg.criteria.artifact_destination
             )
