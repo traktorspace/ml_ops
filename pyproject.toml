@@ -10,7 +10,7 @@ dependencies = [
     "hydra-core>=1.3.2",
     "ipykernel>=6.29.5",
     "matplotlib>=3.10.3",
-    "numpy==1.26.4",
+    "numpy>=1.26.4",
     "pillow==10.4.0",
     "pipeline",
     "pre-commit>=4.2.0",
@@ -28,7 +28,7 @@ build-backend = "setuptools.build_meta"
 where    = ["."]
 
 [tool.uv.sources]
-pipeline = { git = "https://github.com/traktorspace/spacelab-pipeline.git", branch = "develop" }
+pipeline = { git = "ssh://git@github.com/traktorspace/spacelab-pipeline.git", branch = "develop" }
 
 [tool.lint.ruff]
 select = [ 
