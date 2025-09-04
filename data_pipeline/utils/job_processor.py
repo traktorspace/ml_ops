@@ -8,6 +8,7 @@ import psycopg
 import rasterio
 from encord.project import Project
 from frame_aligner.methods import BaseAligner
+from loguru import logger
 
 from data_pipeline.utils.cube_utils import (
     align_label_with_new_reference,
@@ -137,6 +138,7 @@ class JobProcessor:
     aligners: list[BaseAligner] = None  # lazy-initialised
     allow_overwriting: bool = False
     stats: JobStats = field(default_factory=JobStats)
+    dry_run: bool = False
 
     def _align_annotation_if_needed(
         self,
@@ -147,6 +149,9 @@ class JobProcessor:
         if label.shape == ref_shape:
             return label, None  # nothing to do
 
+        logger.info(
+            f'Bad shape found for {job["prodname"]} - running alignment'
+        )
         self.stats.add('bad_shape_found', job['prodname'])
         self.aligners = self.aligners or get_aligner()  # init once
 
@@ -158,9 +163,11 @@ class JobProcessor:
         )
 
         if new_label.shape != ref_shape:
+            logger.error(f'Processing failed for {job["prodname"]}')
             self.stats.add('processing_failed', job['prodname'])
             raise RuntimeError(f'Alignment failed for {job["prodname"]}')
 
+        logger.success(f'Alignment was succesfull for {job["prodname"]}')
         return new_label, new_prof
 
     def __call__(self, db_id: int, job: dict[str, str]) -> None:
@@ -169,17 +176,30 @@ class JobProcessor:
         On success: commits artifacts + runs *q_success*.
         On any exception: let caller handle logging / q_failure.
         """
+        if self.dry_run:
+            logger.info(
+                f'[DRY-RUN] would create symlink {job["s3_path"]} '
+                f'and download annotation {job["remote_annotation_path"]}'
+            )
+            # register a fake “success” so that statistics still make sense
+            self.stats.mark_success(db_id)
+            return
 
+        logger.info(f'Starting job {db_id} (prod={job["prodname"]})')
         dst = self.dst / job['prodname']
 
         # Skip completely if folder already exists and we do NOT overwrite
         if dst.exists() and not self.allow_overwriting:
+            logger.info(
+                f'Skipping job {db_id} (prod={job["prodname"]}) because of exists and override is disabled!'
+            )
             self.stats.add('skipped_existing', job['prodname'])
             return
 
         # 1) Fetch annotation
         label = get_annotation_tensor(job['prodname'], self.encord_project)
         if label is None:
+            logger.error(f'Annotation not found for {job["prodname"]}')
             self.stats.add('annotation_not_found', job['prodname'])
             raise LookupError(f'Annotation missing for {job["prodname"]}')
 

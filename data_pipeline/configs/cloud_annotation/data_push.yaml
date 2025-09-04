@@ -10,6 +10,8 @@ hydra:
 criteria:
   artifact_destination: ${as_path:/bigdata/datasets_analytics/clouds/hf1a_reflectance/pipeline_test}
   prod_selection_query: data_pipeline.utils.db_queries.fetch_all_products_paths_that_passed_qc
+  starting_date: 2025-08-01
+  min_cloud_coverage: 10
 
 logging:
   logdir: ${as_path:${hydra:runtime.cwd}/logs/scripts/push}
@@ -27,6 +29,7 @@ job_processor:
   query_success: data_pipeline.utils.db_queries.mark_annotation_processed
   query_failure: data_pipeline.utils.db_queries.write_exception
   allow_overwriting: true 
+  dry_run: true
 
 secrets:
   dotenv: ${hydra:runtime.cwd}/configs/cloud_annotation/.env

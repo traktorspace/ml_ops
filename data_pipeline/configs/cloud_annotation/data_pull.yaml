@@ -10,7 +10,11 @@ hydra:
 criteria:
   artifact_destination: ${as_path:/bigdata/datasets_analytics/clouds/hf1a_reflectance/pipeline_test}
   prod_selection_query: data_pipeline.utils.db_queries.fetch_encord_uploaded_but_not_downloaded_products_from_annotation_db
-
+  query_params:
+    min_cloud: 0
+    max_cloud: 10
+    created_after: '2025-08-01T00:00:00Z'
+    created_before: '2025-09-05T00:00:00Z'
 logging:
   logdir: ${as_path:${hydra:runtime.cwd}/logs/scripts/pull}
   console_fmt: >-
@@ -27,6 +31,7 @@ job_processor:
   query_success: data_pipeline.utils.db_queries.mark_annotation_processed
   query_failure: data_pipeline.utils.db_queries.write_exception
   allow_overwriting: true 
+  dry_run: true
 
 secrets:
   dotenv: ${hydra:runtime.cwd}/configs/cloud_annotation/.env

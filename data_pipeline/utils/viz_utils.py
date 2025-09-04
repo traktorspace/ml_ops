@@ -14,9 +14,10 @@ def map_classes_to_values(annotation: np.ndarray, dict_map: dict[int, int]):
     return annotation
 
 
-def build_cube_annotation_preview(
+def build_cube_and_mask_preview(
     cube_path: Path,
-    annotation_path: Path,
+    mask_path: Path,
+    mask_plot_title: str = 'Annotation',
     overlay_alpha: float = 0.5,
     dpi: int = 300,
     legend_map: dict = {
@@ -50,8 +51,8 @@ def build_cube_annotation_preview(
     ----------
     cube_path:
         Path to the multi-band raster file.  Only band 1 is shown.
-    annotation_path:
-        Path to the annotation raster.  Its raw values are converted to class
+    mask_path:
+        Path to the annotation or cloud mask raster.  Its raw values are converted to class
         indices by applying `mapping_values`.
     overlay_alpha:
         Transparency of the annotation when it is overlaid on the cube in the
@@ -86,7 +87,7 @@ def build_cube_annotation_preview(
     Examples
     --------
     >>> from pathlib import Path
-    >>> buf = build_cube_annotation_preview(
+    >>> buf = build_cube_and_mask_preview(
     ...     cube_path=Path("L1BXXX_cube.tif"),
     ...     annotation_path=Path("L1BXXX_annotation.tif"),
     ...     overlay_alpha=0.4,
@@ -101,7 +102,7 @@ def build_cube_annotation_preview(
         for i, label in legend_map.items()
     ]
 
-    cube_path, annotation_path = Path(cube_path), Path(annotation_path)
+    cube_path, annotation_path = Path(cube_path), Path(mask_path)
 
     with rasterio.open(cube_path) as src:
         cube = src.read(1)
@@ -116,7 +117,7 @@ def build_cube_annotation_preview(
     axes[0].axis('off')
 
     axes[1].imshow(annotation, cmap='viridis')
-    axes[1].set_title('Annotation')
+    axes[1].set_title(mask_plot_title)
     axes[1].axis('off')
 
     axes[2].imshow(cube, cmap='gray')

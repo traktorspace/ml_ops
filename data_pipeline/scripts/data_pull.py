@@ -114,6 +114,12 @@ def main(
             filter=lambda record: not is_noisy(record),
         )
 
+        dry_run = cfg.job_processor.dry_run
+        if dry_run:
+            logger.warning(
+                'DRY-RUN ENABLED - no permanent action will be taken!'
+            )
+
         encord_client = fetch_client(env['ENCORD_PRIVATE_KEY_PATH'])
         encord_project = fetch_project(
             client=encord_client,
@@ -205,6 +211,7 @@ def main(
                 q_failure=load_attr(cfg.job_processor.query_failure),
                 encord_project=encord_project,
                 allow_overwriting=cfg.job_processor.allow_overwriting,
+                dry_run=cfg.job_processor.dry_run,
             )
 
             start = perf_counter()
@@ -213,59 +220,67 @@ def main(
                 job,
             ) in tqdm(job_dict.items()):
                 try:
+                    if dry_run:
+                        logger.info(
+                            f'[DRY-RUN] would process job id={db_id} : {job}'
+                        )
+                        continue
                     processor(
                         db_id,
                         job,
                     )
                 except Exception:
-                    exec_query(
-                        db_conn,
-                        processor.q_failure,
-                        params={
-                            'exception_message': str(traceback.format_exc()),
-                            'annotation_id': db_id,
-                        },
-                    )
+                    if not dry_run:  # suppress UPDATE in dry run
+                        exec_query(
+                            db_conn,
+                            processor.q_failure,
+                            params={
+                                'exception_message': str(
+                                    traceback.format_exc()
+                                ),
+                                'annotation_id': db_id,
+                            },
+                        )
             elapsed = perf_counter() - start
             time_msg = f'Total time: {elapsed:.1f} s\n({len(job_dict) / elapsed:.2f} jobs/s)'
             logger.info(processor.stats.summary())
             stamp = datetime.now().strftime('%Y/%m/%d-%H:%M:%S')
+            if not dry_run:
+                success_msg = (
+                    '*[TEST]*\n✅ Processing completed!\n\n'
+                    f'⏰ *{stamp}*\n\n'
+                    f'Pairs (image symlink, annotation file) have been stored at destination: '
+                    f'`{cfg["criteria"]["artifact_destination"]}`\n'
+                    f'Analyzed {len(job_dict)} products\n{time_msg}'
+                )
 
-            success_msg = (
-                '*[TEST]*\n✅ Processing completed!\n\n'
-                f'⏰ *{stamp}*\n\n'
-                f'Pairs (image symlink, annotation file) have been stored at destination: '
-                f'`{cfg["criteria"]["artifact_destination"]}`\n'
-                f'Analyzed {len(job_dict)} products\n{time_msg}'
-            )
-
-            thread_id = post_new_message_and_get_thread_id(
-                text=wrap_msg_with_project_name(
-                    msg=success_msg,
-                    projname=projname,
-                ),
-                slack_bot_token=env['SLACK_OAUTH'],
-                channel_id=env['SLACK_CHANNEL'],
-            )
-            buffers = processor.stats.as_text_buffers()
-            for name, filebuf in buffers.items():
-                upload_file_to_channel(
-                    buffer=filebuf,
-                    filename=filebuf.name,
-                    token=env['SLACK_OAUTH'],
+                thread_id = post_new_message_and_get_thread_id(
+                    text=wrap_msg_with_project_name(
+                        msg=success_msg,
+                        projname=projname,
+                    ),
+                    slack_bot_token=env['SLACK_OAUTH'],
                     channel_id=env['SLACK_CHANNEL'],
-                    initial_comment='',
-                    thread_ts=thread_id,
                 )
+                buffers = processor.stats.as_text_buffers()
+                for name, filebuf in buffers.items():
+                    upload_file_to_channel(
+                        buffer=filebuf,
+                        filename=filebuf.name,
+                        token=env['SLACK_OAUTH'],
+                        channel_id=env['SLACK_CHANNEL'],
+                        initial_comment='',
+                        thread_ts=thread_id,
+                    )
 
-            mismatching_products = mismatched_products(
-                cfg.criteria.artifact_destination
-            )
-            if len(mismatching_products) > 0:
-                logger.warning(
-                    f'Found {len(mismatching_products)} pair of annotation and product with different shapes!'
+                mismatching_products = mismatched_products(
+                    cfg.criteria.artifact_destination
                 )
-                logger.warning(mismatching_products)
+                if len(mismatching_products) > 0:
+                    logger.warning(
+                        f'Found {len(mismatching_products)} pair of annotation and product with different shapes!'
+                    )
+                    logger.warning(mismatching_products)
         db_conn.close()
 
     except Exception as e:

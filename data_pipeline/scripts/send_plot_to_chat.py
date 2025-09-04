@@ -1,3 +1,5 @@
+# Send pair of image + annotation to slack chat
+
 # python3 scripts/send_plot_to_chat.py
 #  -dotenv=/home/tommaso.canova/repos/encord_scripts/data_pipeline/configs/cloud_annotation/.env
 #  -imgpath=/bigdata/datasets_analytics/clouds/hf1a_reflectance/pipeline_test -prodname=hyperfield1a_L1B_20250608T073649
@@ -22,7 +24,7 @@ from data_pipeline.utils.slack_utils import (
     post_new_message_and_get_thread_id,
     upload_file_to_channel,
 )
-from data_pipeline.utils.viz_utils import build_cube_annotation_preview
+from data_pipeline.utils.viz_utils import build_cube_and_mask_preview
 
 
 def fetch_and_set_plots_to_chat(
@@ -48,7 +50,7 @@ def fetch_and_set_plots_to_chat(
     slack_channel_id :
         Slack channel (ID) where the image will be posted.
     overlay_alpha :
-        Alpha value for overlay used in `build_cube_annotation_preview`.
+        Alpha value for overlay used in `build_cube_and_mask_preview`.
     dpi :
         DPI setting used when rendering the preview image.
     thread_ts :
@@ -67,7 +69,7 @@ def fetch_and_set_plots_to_chat(
     )
 
     # 2. Build preview buffer
-    buf = build_cube_annotation_preview(
+    buf = build_cube_and_mask_preview(
         cube_path=cube_path,
         annotation_path=annotation_path,
         overlay_alpha=overlay_alpha,

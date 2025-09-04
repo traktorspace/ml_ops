@@ -41,6 +41,26 @@ FROM prod.l1ab_product
 WHERE quality_approved = TRUE
 """)
 
+fetch_latest_approved_products = SQL("""
+SELECT DISTINCT ON (s3_path) s3_path
+FROM   prod.l1ab_product
+WHERE  quality_approved = TRUE
+
+-- cloud-coverage range
+AND ( %(min_cloud)s::numeric      IS NULL
+      OR cloud_cover_percentage >= %(min_cloud)s::numeric )
+AND ( %(max_cloud)s::numeric      IS NULL
+      OR cloud_cover_percentage <= %(max_cloud)s::numeric )
+
+-- created_on range
+AND ( %(created_after)s::timestamptz  IS NULL
+      OR created_on >= %(created_after)s::timestamptz )
+AND ( %(created_before)s::timestamptz IS NULL
+      OR created_on <= %(created_before)s::timestamptz )
+
+ORDER  BY s3_path, created_on DESC
+""")
+
 fetch_all_products_that_passed_qc = SQL("""
 SELECT id, s3_path
 FROM prod.l1ab_product
