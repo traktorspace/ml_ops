@@ -139,7 +139,7 @@ def upload_file_to_channel(
     r1 = requests.post(
         'https://slack.com/api/files.getUploadURLExternal',
         headers={'Authorization': f'Bearer {token}'},
-        data={'filename': 'plot.png', 'length': size_bytes},
+        data={'filename': filename, 'length': size_bytes},
     ).json()
 
     if not r1.get('ok'):

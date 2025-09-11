@@ -1,3 +1,5 @@
+import io
+import warnings
 from pathlib import Path
 
 import cv2
@@ -5,12 +7,54 @@ import numpy as np
 import rasterio
 from frame_aligner import find_homographies, initialize_aligners
 from frame_aligner.methods import BaseAligner
+from fs.memoryfs import MemoryFS
 from kuva_metadata.sections_l0 import AlignmentAlgorithm
+from loguru import logger
 from PIL import Image
+from rasterio.io import MemoryFile
+
+warnings.filterwarnings(
+    'ignore', message=r'.*pkg_resources is deprecated.*', category=UserWarning
+)
+
+
+def _load_band(
+    src: str | Path | bytes | bytes, band_n: int
+) -> tuple[np.ndarray, dict]:
+    """
+    Load one band from *src* (path, bytes or binary file-like object)
+    and return (array, profile).
+    """
+    # 1. Raw bytes ----------------------------------------------------
+    if isinstance(src, (bytes, bytearray)):
+        mem = MemoryFile(src)
+        ds = mem.open()
+
+    # 2. Regular path / URL ------------------------------------------
+    elif isinstance(src, (str, Path)):
+        mem = None
+        ds = rasterio.open(src)
+
+    # 3. File-like object --------------------------------------------
+    else:  # we are sure it's not str now
+        # At this point the static checker knows `read` exists.
+        data_bytes = src.read()  # type: ignore[attr-defined]
+        mem = MemoryFile(data_bytes)
+        ds = mem.open()
+
+    try:
+        data = ds.read(band_n)
+        profile = ds.profile
+    finally:
+        ds.close()
+        if mem is not None:
+            mem.close()
+
+    return data, profile
 
 
 def _stretch_single_band_contrast_array(
-    band_array, lower_quantile=0.01, upper_quantile=0.995
+    band_array, lower_quantile=0.01, upper_quantile=0.98
 ):
     """
     Contrast-stretch a single band using NumPy only.
@@ -49,34 +93,85 @@ def extract_bands(
     red_band_index: int = 10,
     green_band_index: int = 5,
     blue_band_index: int = 1,
-    nir_band_index: int = 22,
+    nir_band_index: int = 21,
+    memory_filesystem: MemoryFS | None = None,
     verbose: bool = False,
-):
+) -> tuple[
+    np.ndarray | io.BytesIO,
+    np.ndarray | io.BytesIO,
+    str | Path | None,
+    str | Path | None,
+    str | Path | None,
+]:
     """
     Extract RGB + NIR bands from a multiband raster.
 
     Parameters
     ----------
-    filepath : str | Path
-        Source raster file.
-    save_product : bool
-        If True, write two PNGs (`*_rgb.png`, `*_nir.png`) to `dst_path`.
-    dst_path : Path | None
-        Base folder for outputs (required when `save_product=True`).
-    stretch_contrast : bool
-        Apply 1-2 % contrast stretching to each band.
+    filepath : str | pathlib.Path
+        Location of the source raster.
+    save_product : bool, default False
+        If True, the products (`*_rgb.png`, `*_nir.png`) are written either to
+        `dst_path` (standard filesystem) **or** to `memory_filesystem`
+        (in-memory FS).
+        When False, nothing is written—only the arrays are returned.
+    dst_path : pathlib.Path | None
+        Base output folder used when `save_product=True` **and**
+        `memory_filesystem is None`. Must be provided in that case.
+    stretch_contrast : bool, default False
+        Apply a qnorm contrast stretch to each band before stacking.
     red_band_index / green_band_index / blue_band_index / nir_band_index : int
-        1-based band positions inside the raster.
+        1-based band indices inside the raster to be used as R, G, B, NIR.
+    memory_filesystem : fs.memoryfs.MemoryFS | None, default None
+        Optional PyFilesystem2 in-memory file system.
+        When supplied and `save_product=True`, outputs are written there instead
+        of to disk.
+    verbose : bool, default False
+        Print the target locations of the written PNGs.
 
     Returns
     -------
-    tuple[np.ndarray, np.ndarray]
-        (rgb_array, nir_array)
+    - If `save_product is False`
+        tuple[np.ndarray, np.ndarray, None, None, None]
+        → `(rgb_array, nir_array, None, None, None)`
+
+    - If `save_product is True` **and** `memory_filesystem is None`
+        tuple[np.ndarray, np.ndarray, pathlib.Path, pathlib.Path, pathlib.Path]
+        → `(rgb_array, nir_array, out_dir, rgb_path, nir_path)`
+          • `out_dir`   → folder that was created on disk
+          • `rgb_path`  → full path of the saved RGB PNG on disk
+          • `nir_path`  → full path of the saved NIR PNG on disk
+
+    - If `save_product is True` **and** `memory_filesystem is not None`
+        tuple[io.BytesIO, io.BytesIO, pathlib.Path, pathlib.Path, pathlib.Path]
+        → `(rgb_buffer, nir_buffer, out_dir, rgb_path, nir_path)`
+          • `rgb_buffer`, `nir_buffer` are rewinded `BytesIO` objects
+          • `out_dir`, `rgb_path`, `nir_path` represent the *logical* locations
+            inside the provided `MemoryFS` (use `.as_posix()` when opening
+            them through the same `MemoryFS` instance).
+
+    Notes
+    -----
+    - NaNs and ±inf values are converted to finite numbers before scaling
+      to 8-bit.
+    - Output PNGs use RGB color for the stacked array and single-band (mode
+      "L") for the NIR image.
+    - The function does **not** close the supplied `MemoryFS`; the caller is
+      responsible for that when required.
     """
 
-    def ndarray2png(ndarray: np.ndarray):
-        ndarray = np.nan_to_num(ndarray, nan=0.0, posinf=1.0, neginf=0.0)
-        return (255 * np.clip(ndarray, 0.0, 1.0)).astype(np.uint8)
+    def ndarray2png(arr: np.ndarray):
+        if arr.dtype == np.uint8:
+            return arr.copy()
+
+        arr = np.nan_to_num(arr, nan=0.0, posinf=1.0, neginf=0.0)
+
+        # If values look like reflectance (0-1), keep them;
+        # otherwise normalise to 0-1 first.
+        if arr.max() > 1.0:
+            arr = (arr - arr.min()) / (arr.max() - arr.min() + 1e-9)
+
+        return (255 * np.clip(arr, 0.0, 1.0)).astype(np.uint8)
 
     if isinstance(filepath, str):
         filepath = Path(filepath)
@@ -92,7 +187,7 @@ def extract_bands(
         bands = {}
         for key, idx in band_indices.items():
             arr = raster.read(idx)
-            if stretch_contrast:
+            if stretch_contrast and key != 'NIR':
                 arr = _stretch_single_band_contrast_array(arr)
             bands[key] = arr
 
@@ -107,17 +202,56 @@ def extract_bands(
 
         parent_folder = filepath.parent.name
         out_dir = dst_path / parent_folder
-        out_dir.mkdir(parents=True, exist_ok=True)
 
         rgb_path = out_dir / f'{parent_folder}_rgb.png'
         nir_path = out_dir / f'{parent_folder}_nir.png'
 
-        Image.fromarray(ndarray2png(rgb_array)).save(rgb_path)
-        Image.fromarray(ndarray2png(nir_array), mode='L').save(nir_path)
+        # Save to file
+        if memory_filesystem is None:
+            out_dir.mkdir(parents=True, exist_ok=True)
+            Image.fromarray(ndarray2png(rgb_array)).save(
+                rgb_path, format='PNG', dpi=(300, 300)
+            )
+            Image.fromarray(ndarray2png(nir_array), mode='L').save(
+                nir_path, format='PNG', dpi=(300, 300)
+            )
 
-        if verbose:
-            print(f'RGB saved to {rgb_path}')
-            print(f'NIR saved to {nir_path}')
+            if verbose:
+                logger.info(f'RGB saved to {rgb_path}')
+                logger.info(f'NIR saved to {nir_path}')
+
+            return rgb_array, nir_array, out_dir, rgb_path, nir_path
+
+        # Save to memory filesystem
+        else:
+            rgb_buf = io.BytesIO()
+            nir_buf = io.BytesIO()
+
+            Image.fromarray(ndarray2png(rgb_array)).save(
+                rgb_buf, format='PNG', dpi=(300, 300)
+            )
+            Image.fromarray(ndarray2png(nir_array), mode='L').save(
+                nir_buf, format='PNG', dpi=(300, 300)
+            )
+
+            rgb_buf.seek(0)
+            nir_buf.seek(0)
+
+            memory_filesystem.makedirs(out_dir.as_posix(), recreate=True)
+            memory_filesystem.makedirs(out_dir.as_posix(), recreate=True)
+
+            with memory_filesystem.open(rgb_path.as_posix(), 'wb') as f:
+                f.write(rgb_buf.read())
+            with memory_filesystem.open(nir_path.as_posix(), 'wb') as f:
+                f.write(nir_buf.read())
+
+            if verbose:
+                logger.info(f'RGB saved to MemoryFS {rgb_path}')
+                logger.info(f'NIR saved to MemoryFS {nir_path}')
+
+            return rgb_buf, nir_buf, out_dir, rgb_path, nir_path
+
+    return rgb_array, nir_array, None, None, None
 
 
 def get_cloud_labels_dict() -> dict[str, int]:
@@ -293,29 +427,29 @@ def apply_nan_mask_to_annotation(
 
     # 3. Broadcast the mask to `annotation`'s shape and apply
     if annotation.ndim == 3:  # (C, W, H)
-        nan_mask = nan_mask[None, ...]  # -> (1, W, H) or broadcast to C
+        nan_mask = nan_mask[
+            None, ...
+        ]  # -> (1, W, H) or broadcast to C # type: ignore
     return np.where(nan_mask, fill_value, annotation)
 
 
 def align_label_with_new_reference(
-    old_frame_path: Path,
-    new_frame_path: Path,
+    old_frame_src: str | Path | bytes,
+    new_frame_src: str | Path | bytes,
     aligners: list[BaseAligner],
     old_label: np.ndarray,
     old_frame_band_n: int = 1,
     new_frame_band_n: int = 10,
-):
+) -> tuple[np.ndarray, dict]:
     # Open old frame as
-    with rasterio.open(old_frame_path) as old_src:
-        old_frame = old_src.read(old_frame_band_n)
-        old_frame = rescale_u8_to_u16(old_frame)
+    old_frame, _ = _load_band(old_frame_src, old_frame_band_n)  #  <-- CHANGED
+    old_frame = rescale_u8_to_u16(old_frame)
 
     # Open current tif file (latest pipeline generated version)
-    with rasterio.open(new_frame_path) as new_src:
-        new_frame = new_src.read(new_frame_band_n)
-        new_frame = float32_to_uint16(new_frame)
-        new_frame_profile = new_src.profile
+    new_frame, new_frame_profile = _load_band(new_frame_src, new_frame_band_n)
+    new_frame = float32_to_uint16(new_frame)
 
+    # Define components for homographies computationn
     cube = [old_frame, new_frame]
     masks = [None for frame in cube]
     frames_metadata = [None for _ in cube]
@@ -324,9 +458,9 @@ def align_label_with_new_reference(
     # Calculate homography transformations
     _, homographies = find_homographies(
         cube=cube,
-        masks=masks,
-        frames_metadata=frames_metadata,
-        frames_camera=frames_camera,
+        masks=masks,  # type: ignore
+        frames_metadata=frames_metadata,  # type: ignore
+        frames_camera=frames_camera,  # type: ignore
         ref_frame_index=0,
         aligners=aligners,
     )

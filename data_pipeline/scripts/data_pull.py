@@ -22,6 +22,7 @@ from omegaconf import (
     DictConfig,
     OmegaConf,
 )
+from psycopg import Connection
 from rasterio.errors import (
     NotGeoreferencedWarning,
 )
@@ -43,14 +44,15 @@ from data_pipeline.utils.encord_utils import (
     fetch_client,
     fetch_project,
 )
+from data_pipeline.utils.gcloud_utils import BucketWrapper
 from data_pipeline.utils.hydra_helpers import (
     load_attr,
 )
 from data_pipeline.utils.job_processor import (
-    JobProcessor,
+    JobPullProcessor,
 )
 from data_pipeline.utils.path_utils import (
-    infer_product_level,
+    parse_s3_path,
     tif_exists,
 )
 from data_pipeline.utils.slack_utils import (
@@ -65,6 +67,30 @@ warnings.filterwarnings(
 )
 
 
+def usage_msg(
+    use_cloud_data_source: bool,
+    save_only_annotation: bool,
+    destination_path: str,
+) -> str:
+    """Return a human-friendly summary of what the pull just did."""
+    origin = (
+        '☁️ Data pulled from Google cloud!'
+        if use_cloud_data_source
+        else '💾 Data pulled from the local disk'
+    )
+
+    if save_only_annotation:
+        detail = '🚨 Note: only annotations have been saved!\n'
+    else:
+        item = 'image' if use_cloud_data_source else 'image symlink'
+        detail = (
+            f'Pairs ({item}, annotation file) have been stored at '
+            f'destination: {destination_path}\n'
+        )
+
+    return f'{origin}\n{detail}'
+
+
 @hydra.main(
     version_base='1.3',
     config_path='../configs/cloud_annotation',
@@ -73,6 +99,9 @@ warnings.filterwarnings(
 def main(
     cfg: DictConfig,
 ):
+    projname: str = 'Unknown'
+    env: dict = {}
+    db_conn: Connection | None = None
     try:
         OmegaConf.register_new_resolver(
             'as_path',
@@ -120,10 +149,10 @@ def main(
                 'DRY-RUN ENABLED - no permanent action will be taken!'
             )
 
-        encord_client = fetch_client(env['ENCORD_PRIVATE_KEY_PATH'])
+        encord_client = fetch_client(Path(str(env['ENCORD_PRIVATE_KEY_PATH'])))
         encord_project = fetch_project(
             client=encord_client,
-            encord_project_hash=env['ENCORD_CLOUD_PROJECT_HASH'],
+            encord_project_hash=str(env['ENCORD_CLOUD_PROJECT_HASH']),
         )
         all_encord_annotations = fetch_annotations_from_workflow_stages(
             project=encord_project
@@ -132,17 +161,22 @@ def main(
         if fetch_annotations_duplicates(all_encord_annotations):
             raise ValueError('Found duplicates in the annotations!')
 
-        projname = cfg['project_name']
+        USE_CLOUD_DATA_SOURCE: bool = cfg.job_processor.use_cloud_data_source
+        projname = str(cfg['project_name'])
         db_conn = init_connection(env)
         completed_annotations = set(all_encord_annotations['Complete'])
         logger.info(
             f'Found {len(completed_annotations)} annotation marked as Completed on Encord'
         )
 
-        products = exec_query(
-            db_conn,
-            load_attr(cfg.criteria.prod_selection_query),
+        products = (
+            exec_query(
+                db_conn,
+                load_attr(cfg.criteria.prod_selection_query),
+            )
+            or []
         )
+
         logger.info(
             f'According to DB: Found {len(products)} products not downloaded yet'
         )
@@ -151,136 +185,182 @@ def main(
         products_to_download = [
             row for row in products if row[1] in completed_set
         ]
-        ready = [row for row in products_to_download if tif_exists(row)]
-        missing_n = len(products_to_download) - len(ready)
-        if missing_n:
-            raise ValueError(
-                f'Only {len(ready)}/{len(products_to_download)} products are ready '
-                f'to be downloaded ({missing_n} original file(s) missing)'
-            )
-
-        if len(ready) == 0:
-            warn_msg = '🤷‍♂️ No products are ready to be downloaded. Ending process gracefully 🪷'
-            logger.warning(warn_msg)
-            post_new_message_and_get_thread_id(
-                text=wrap_msg_with_project_name(
-                    msg=f'```\n{warn_msg}```',
-                    projname=projname,
-                ),
-                slack_bot_token=env['SLACK_OAUTH'],
-                channel_id=env['SLACK_CHANNEL'],
+        if USE_CLOUD_DATA_SOURCE:
+            # TODO: implement a check before
+            logger.warning(
+                'Running with USE_CLOUD_DATA_SOURCE, the files will be fetched at runtime'
             )
         else:
-            logger.info(f'{len(ready)} products are ready to be downloaded')
-
-            # Create a dictionary containing
-            # db_id, prodname, s3_path, remote_annotation_path
-            job_dict = {
-                str(db_id): {
-                    'prodname': prodname,
-                    's3_path': str(
-                        Path(prod_path) / f'{infer_product_level(prodname)}.tif'
-                    ),
-                    'remote_annotation_path': fetch_annotation_signed_url(
-                        encord_client,
-                        prodname,
-                    ),
-                }
-                for db_id, prodname, prod_path in tqdm(
-                    products_to_download,
-                    desc='Resolving remote paths',
-                )
-            }
-
-            # Optional sanity-check / logging
-            missing = [
-                k
-                for k, v in job_dict.items()
-                if v['remote_annotation_path'] is None
-            ]
-            if missing:
-                logger.warning(
-                    f'WARNING: {len(missing)} product(s) have no remote annotation path: '
-                    f'{missing[:5]}{" …" if len(missing) > 5 else ""}'
+            ready = [row for row in products_to_download if tif_exists(row)]
+            missing_n = len(products_to_download) - len(ready)
+            if missing_n:
+                raise ValueError(
+                    f'Only {len(ready)}/{len(products_to_download)} products are ready '
+                    f'to be downloaded ({missing_n} original file(s) missing)'
                 )
 
-            processor = JobProcessor(
-                dst=cfg.criteria.artifact_destination,
-                db_conn=db_conn,
-                q_success=load_attr(cfg.job_processor.query_success),
-                q_failure=load_attr(cfg.job_processor.query_failure),
-                encord_project=encord_project,
-                allow_overwriting=cfg.job_processor.allow_overwriting,
-                dry_run=cfg.job_processor.dry_run,
-            )
-
-            start = perf_counter()
-            for (
-                db_id,
-                job,
-            ) in tqdm(job_dict.items()):
-                try:
-                    if dry_run:
-                        logger.info(
-                            f'[DRY-RUN] would process job id={db_id} : {job}'
-                        )
-                        continue
-                    processor(
-                        db_id,
-                        job,
-                    )
-                except Exception:
-                    if not dry_run:  # suppress UPDATE in dry run
-                        exec_query(
-                            db_conn,
-                            processor.q_failure,
-                            params={
-                                'exception_message': str(
-                                    traceback.format_exc()
-                                ),
-                                'annotation_id': db_id,
-                            },
-                        )
-            elapsed = perf_counter() - start
-            time_msg = f'Total time: {elapsed:.1f} s\n({len(job_dict) / elapsed:.2f} jobs/s)'
-            logger.info(processor.stats.summary())
-            stamp = datetime.now().strftime('%Y/%m/%d-%H:%M:%S')
-            if not dry_run:
-                success_msg = (
-                    '*[TEST]*\n✅ Processing completed!\n\n'
-                    f'⏰ *{stamp}*\n\n'
-                    f'Pairs (image symlink, annotation file) have been stored at destination: '
-                    f'`{cfg["criteria"]["artifact_destination"]}`\n'
-                    f'Analyzed {len(job_dict)} products\n{time_msg}'
-                )
-
-                thread_id = post_new_message_and_get_thread_id(
+            if len(ready) == 0:
+                warn_msg = '🤷‍♂️ No products are ready to be downloaded. Ending process gracefully 🪷'
+                logger.warning(warn_msg)
+                post_new_message_and_get_thread_id(
                     text=wrap_msg_with_project_name(
-                        msg=success_msg,
+                        msg=f'```\n{warn_msg}```',
                         projname=projname,
                     ),
-                    slack_bot_token=env['SLACK_OAUTH'],
-                    channel_id=env['SLACK_CHANNEL'],
+                    slack_bot_token=str(env['SLACK_OAUTH']),
+                    channel_id=str(env['SLACK_CHANNEL']),
                 )
-                buffers = processor.stats.as_text_buffers()
-                for name, filebuf in buffers.items():
-                    upload_file_to_channel(
-                        buffer=filebuf,
-                        filename=filebuf.name,
-                        token=env['SLACK_OAUTH'],
-                        channel_id=env['SLACK_CHANNEL'],
-                        initial_comment='',
-                        thread_ts=thread_id,
-                    )
+            else:
+                logger.info(f'{len(ready)} products are ready to be downloaded')
+                products_to_download = ready
 
-                mismatching_products = mismatched_products(
-                    cfg.criteria.artifact_destination
+        # Limit products to download to specific amount for debugging purposes
+        if cfg.debug_settings.limit_product_processed:
+            products_to_download = products_to_download[
+                : cfg.debug_settings.max_product_processed
+            ]
+
+        # Create a dictionary containing
+        # db_id, prodname, s3_path, remote_annotation_path
+        job_dict = {
+            str(db_id): {
+                'prodname': prodname,
+                's3_path': parse_s3_path(
+                    prodname=prodname,
+                    prod_path=prod_path,
+                    use_cloud_data_source=USE_CLOUD_DATA_SOURCE,
+                ),
+                'remote_annotation_path': fetch_annotation_signed_url(
+                    encord_client,
+                    prodname,
+                ),
+            }
+            for db_id, prodname, prod_path in tqdm(
+                products_to_download,
+                desc='Resolving remote paths',
+            )
+        }
+
+        # Optional sanity-check / logging
+        missing = [
+            k
+            for k, v in job_dict.items()
+            if v['remote_annotation_path'] is None
+        ]
+        if missing:
+            logger.warning(
+                f'WARNING: {len(missing)} product(s) have no remote annotation path: '
+                f'{missing[:5]}{" …" if len(missing) > 5 else ""}'
+            )
+
+        processor = JobPullProcessor(
+            dst=cfg.criteria.artifact_destination,
+            db_conn=db_conn,
+            q_success=load_attr(cfg.job_processor.query_success),
+            q_failure=load_attr(cfg.job_processor.query_failure),
+            encord_project=encord_project,
+            allow_overwriting=cfg.job_processor.allow_overwriting,
+            use_cloud_data_source=USE_CLOUD_DATA_SOURCE,
+            aligner_method=cfg.job_processor.aligner_method,
+            aligner_device=cfg.job_processor.aligner_device,
+            save_only_annotation=cfg.job_processor.save_only_annotation,
+            dry_run=cfg.job_processor.dry_run,
+        )
+
+        # In case of using remote bucket
+        # the cloud bucket wrapper is initialized
+        if USE_CLOUD_DATA_SOURCE:
+            processor.set_cloud_bucket_wrapper(
+                BucketWrapper(
+                    project_name=str(env['DATA_ARCHIVE_GOOGLE_CLOUD_PROJECT']),
+                    bucket_name=str(
+                        env['DATA_ARCHIVE_GOOGLE_CLOUD_BUCKET_NAME']
+                    ),
                 )
-                if len(mismatching_products) > 0:
-                    logger.warning(
-                        f'Found {len(mismatching_products)} pair of annotation and product with different shapes!'
+            )
+
+        # Loop processing over the products
+        start = perf_counter()
+        for idx, (
+            db_id,
+            job,
+        ) in enumerate(tqdm(job_dict.items())):
+            try:
+                if dry_run:
+                    logger.info(
+                        f'[DRY-RUN] would process job id={db_id} : {job}'
                     )
-                    logger.warning(mismatching_products)
+                    continue
+                processor(db_id, job)
+            except Exception as e:
+                if not dry_run:  # suppress UPDATE in dry run
+                    logger.warning(
+                        f'Exception {e} raised for id: {db_id} and {job}'
+                    )
+                    processor.stats.add('processing_failed', job['prodname'])
+                    exec_query(
+                        db_conn,
+                        processor.q_failure,
+                        params={
+                            'exception_message': str(traceback.format_exc()),
+                            'annotation_id': db_id,
+                        },
+                    )
+        elapsed = perf_counter() - start
+        time_msg = f'Total time: {elapsed:.1f} s  ({elapsed / len(job_dict):.2f} s/job)'
+        logger.info(processor.stats.summary())
+        stamp = datetime.now().strftime('%Y/%m/%d-%H:%M:%S')
+
+        actual_usage_msg = usage_msg(
+            use_cloud_data_source=processor.use_cloud_data_source,
+            save_only_annotation=processor.save_only_annotation,
+            destination_path=str(cfg.criteria.artifact_destination),
+        )
+
+        if not dry_run:
+            debug_prefix = (
+                '*[RUNNING IN DEBUG MODE]*\n'
+                if cfg.debug_settings.limit_product_processed
+                else ''
+            )
+
+            success_msg = (
+                f'{debug_prefix}'
+                '✅ Processing completed!\n\n'
+                f'⏰ *{stamp}*\n\n'
+                f'{actual_usage_msg}'
+                f'🧐 Analyzed {len(job_dict)} products\n⌛ {time_msg}\n'
+                f'👉 Correctly processed files {len(processor.stats.correctly_processed)}/{len(job_dict)}'
+            )
+
+            thread_id = post_new_message_and_get_thread_id(
+                text=wrap_msg_with_project_name(
+                    msg=success_msg,
+                    projname=projname,
+                ),
+                slack_bot_token=str(env['SLACK_OAUTH']),
+                channel_id=str(env['SLACK_CHANNEL']),
+            )
+            buffers = processor.stats.as_text_buffers()
+            for name, filebuf in buffers.items():
+                num_lines = len(filebuf.getvalue().decode('utf-8').splitlines())
+                upload_file_to_channel(
+                    buffer=filebuf,
+                    filename=filebuf.name,
+                    token=str(env['SLACK_OAUTH']),
+                    channel_id=str(env['SLACK_CHANNEL']),
+                    initial_comment=f'{filebuf.name} -> {num_lines}',
+                    thread_ts=thread_id,
+                )
+
+            mismatching_products = mismatched_products(
+                cfg.criteria.artifact_destination
+            )
+            if len(mismatching_products) > 0:
+                logger.warning(
+                    f'Found {len(mismatching_products)} pair of annotation and product with different shapes!'
+                )
+                logger.warning(mismatching_products)
         db_conn.close()
 
     except Exception as e:
@@ -292,8 +372,8 @@ def main(
                 msg=f'❌ Error occured!\n⏰ *{stamp}*\n```\n{e}```',
                 projname=projname,
             ),
-            slack_bot_token=env['SLACK_OAUTH'],
-            channel_id=env['SLACK_CHANNEL'],
+            slack_bot_token=str(env['SLACK_OAUTH']),
+            channel_id=str(env['SLACK_CHANNEL']),
         )
     finally:
         if db_conn is not None:

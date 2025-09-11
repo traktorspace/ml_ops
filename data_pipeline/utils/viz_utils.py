@@ -144,3 +144,72 @@ def build_cube_and_mask_preview(
     plt.close(fig)
     buf.seek(0)
     return buf
+
+
+def build_annotation_preview(
+    mask_path: Path,
+    mask_plot_title: str = 'Annotation',
+    dpi: int = 300,
+    legend_map: dict = {
+        0: 'Fill/Clear',
+        1: 'Cloud Shadow',
+        2: 'Thin Cloud',
+        3: 'Cloud',
+    },
+    mapping_values: dict = {
+        128: 0,
+        64: 1,
+        192: 2,
+        255: 3,
+    },
+) -> BytesIO:
+    """
+    Create a visual preview for *only* the annotation mask.
+
+    The figure contains a single panel with the remapped mask plus a legend.
+
+    Parameters
+    ----------
+    mask_path:
+        Path to the annotation / cloud-mask raster.
+    mask_plot_title, dpi, legend_map, mapping_values:
+        Same meaning as in `build_cube_and_mask_preview`.
+
+    Returns
+    -------
+    io.BytesIO
+        PNG buffer positioned at byte 0.
+    """
+    mask_path = Path(mask_path)
+
+    with rasterio.open(mask_path) as src:
+        annotation = map_classes_to_values(src.read(1), mapping_values)
+
+    # Build legend patches
+    cmap = plt.cm.viridis
+    patches = [
+        mpatches.Patch(color=cmap(i / max(legend_map.keys())), label=label)
+        for i, label in legend_map.items()
+    ]
+
+    fig, ax = plt.subplots(figsize=(4, 4), dpi=dpi)
+    ax.imshow(annotation, cmap='viridis')
+    ax.set_title(mask_plot_title)
+    ax.axis('off')
+
+    plt.legend(
+        handles=patches,
+        title='Legend',
+        bbox_to_anchor=(1.05, 1),
+        loc='upper left',
+        borderaxespad=0.0,
+    )
+
+    fig.suptitle(mask_path.parent.name, fontsize=14)
+    fig.tight_layout(rect=[0, 0.03, 1, 0.95])
+
+    buf = BytesIO()
+    fig.savefig(buf, format='png')
+    plt.close(fig)
+    buf.seek(0)
+    return buf

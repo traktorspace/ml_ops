@@ -42,7 +42,7 @@ WHERE quality_approved = TRUE
 """)
 
 fetch_latest_approved_products = SQL("""
-SELECT DISTINCT ON (s3_path) s3_path
+SELECT DISTINCT ON (s3_path) id, s3_path
 FROM   prod.l1ab_product
 WHERE  quality_approved = TRUE
 
@@ -68,7 +68,14 @@ WHERE quality_approved = TRUE
 """)
 
 insert_cloud_annotation_row = SQL(""" 
-INSERT INTO annotations.clouds_annotations (product_name, created_on, bucket_path, uploaded_on_encord, annotated_and_downloaded, contains_snow, product_id)
+INSERT INTO annotations.clouds_annotations 
+  (product_name, 
+  created_on, 
+  bucket_path, 
+  uploaded_on_encord, 
+  annotated_and_downloaded, 
+  contains_snow, 
+  product_id)
 VALUES (%s, %s, %s, %s, %s, %s, %s)
 """)
 

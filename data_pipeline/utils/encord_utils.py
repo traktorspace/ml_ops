@@ -1,8 +1,61 @@
 from collections import Counter
 from pathlib import Path
-
-import encord
+from dataclasses import dataclass, field
+from encord.user_client import EncordUserClient
+from encord.project import Project
 import numpy as np
+import json
+
+
+@dataclass(slots=True)
+class ImageGroup:
+    """
+    One item inside the "image_groups" list.
+    Only objectUrl_0 and objectUrl_1 are mandatory for your use-case;
+    the rest are optional so that the same class can be reused elsewhere.
+    """
+
+    title: str
+    objectUrl_0: str
+    objectUrl_1: str
+    createVideo: bool = False
+
+    def to_dict(self) -> dict[str, bool | str]:
+        """Return a JSON-serialisable dict."""
+        d: dict[str, bool | str] = {
+            'title': self.title,
+            'createVideo': self.createVideo,
+            'objectUrl_0': self.objectUrl_0,
+            'objectUrl_1': self.objectUrl_1,
+        }
+        return d
+
+
+@dataclass(slots=True)
+class ImageGroupPayload:
+    """
+    Container for the request body you need to send somewhere else.
+    """
+
+    image_groups: list[ImageGroup] = field(default_factory=list)
+    skip_duplicate_urls: bool = True
+
+    def to_dict(self) -> dict:
+        return {
+            'image_groups': [g.to_dict() for g in self.image_groups],
+            'skip_duplicate_urls': self.skip_duplicate_urls,
+        }
+
+    def add_group(self, group: ImageGroup) -> None:
+        self.image_groups.append(group)
+
+    def to_json_file(self, path: str | Path, *, indent: int = 2) -> Path:
+        p = Path(path)
+        p.parent.mkdir(parents=True, exist_ok=True)
+        with open(p, 'w', encoding='utf-8') as fp:
+            json.dump(self.to_dict(), fp, indent=indent, ensure_ascii=False)
+            fp.write('\n')
+        return p
 
 
 def fetch_client(encord_ssh_key_path: Path):
@@ -19,12 +72,12 @@ def fetch_client(encord_ssh_key_path: Path):
     encord.EncordUserClient
         Authenticated client instance.
     """
-    return encord.EncordUserClient.create_with_ssh_private_key(
+    return EncordUserClient.create_with_ssh_private_key(
         ssh_private_key_path=encord_ssh_key_path
     )
 
 
-def fetch_project(client: encord.EncordUserClient, encord_project_hash: str):
+def fetch_project(client: EncordUserClient, encord_project_hash: str):
     """
     Retrieve an Encord project.
 
@@ -43,7 +96,7 @@ def fetch_project(client: encord.EncordUserClient, encord_project_hash: str):
     return client.get_project(encord_project_hash)
 
 
-def fetch_dataset(client: encord.EncordUserClient, encord_dataset_hash: str):
+def fetch_dataset(client: EncordUserClient, encord_dataset_hash: str):
     """
     Retrieve an Encord dataset.
 
@@ -62,7 +115,7 @@ def fetch_dataset(client: encord.EncordUserClient, encord_dataset_hash: str):
     return client.get_dataset(encord_dataset_hash)
 
 
-def fetch_annotations_from_workflow_stages(project: encord.project.Project):
+def fetch_annotations_from_workflow_stages(project: Project):
     """
     Collect task titles (removing ``.png`` suffix) for every workflow stage.
 
@@ -120,7 +173,7 @@ def fetch_annotations_duplicates(
 
 
 def fetch_annotation_signed_url(
-    encord_client: encord.EncordUserClient, product_name: str
+    encord_client: EncordUserClient, product_name: str
 ) -> str | None:
     """
     Fetch the signed URL of the first remote annotation that matches the
@@ -164,7 +217,7 @@ def fetch_annotation_signed_url(
 
 def get_annotation_tensor(
     prod_name: str,
-    encord_project: encord.project.Project,
+    encord_project: Project,
     label_map: dict[str, int] | None = None,
 ) -> np.ndarray | None:
     """
@@ -230,6 +283,10 @@ def get_annotation_tensor(
 
     label_row = label_rows[0]
     label_row.initialise_labels()
+
+    num_instances = 0
+    object_instances = []
+    bitmask = None
 
     # Get object instances for the specific file
     # The annotations should always be on the frame contianing RGB bands,

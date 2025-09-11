@@ -1,5 +1,9 @@
+from typing import Any, Mapping, Sequence
+
 import psycopg
 from psycopg import sql
+
+ExecuteParams = Sequence[Any] | Mapping[str, Any]
 
 
 def build_db_connection_string(
@@ -48,8 +52,8 @@ def init_connection(config: dict):
 
 def exec_query(
     connection: psycopg.Connection,
-    query: str,
-    params: tuple = (),
+    query: str | sql.Composable | sql.SQL,
+    params: ExecuteParams | None = (),
     fetch: bool = True,
 ):
     """
@@ -83,7 +87,7 @@ def exec_query(
     """
     try:
         with connection.cursor() as cur:
-            cur.execute(query, params)
+            cur.execute(query, params)  # type: ignore
             # fetch only when requested and there is something to fetch
             if fetch and cur.description is not None:
                 return cur.fetchall()  # ret rows
@@ -97,7 +101,7 @@ def exec_query(
 
 def build_query(
     base_query: sql.Composed | sql.SQL, new_clause: sql.Composed | None = None
-) -> sql.Composed:
+) -> sql.Composed | sql.SQL:
     """
     Compose or extend a SQL query with a WHERE clause.
 
@@ -172,7 +176,7 @@ def build_query(
 
 def build_like_filter(
     column: str, values: list[str]
-) -> tuple[sql.Composed, tuple]:
+) -> tuple[sql.Composed | sql.SQL, tuple]:
     """
     Build a LIKE clause with placeholders and return the SQL and parameters.
 

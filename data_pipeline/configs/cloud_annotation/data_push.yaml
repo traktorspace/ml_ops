@@ -7,11 +7,16 @@ hydra:
     dir: ${hydra:runtime.cwd}/logs/hydra/push/${now:%Y-%m-%d}/${now:%H-%M-%S}
   output_subdir: null
 
+secrets:
+  dotenv: ${hydra:runtime.cwd}/configs/cloud_annotation/.env
+
 criteria:
-  artifact_destination: ${as_path:/bigdata/datasets_analytics/clouds/hf1a_reflectance/pipeline_test}
-  prod_selection_query: data_pipeline.utils.db_queries.fetch_all_products_paths_that_passed_qc
-  starting_date: 2025-08-01
-  min_cloud_coverage: 10
+  prod_selection_query: data_pipeline.utils.db_queries.fetch_latest_approved_products
+  query_params:
+    min_cloud: 5
+    max_cloud: 20
+    created_after: 2025-08-01T00:00:00Z
+    created_before: 2025-09-05T00:00:00Z
 
 logging:
   logdir: ${as_path:${hydra:runtime.cwd}/logs/scripts/push}
@@ -26,10 +31,14 @@ logging:
     - frame-aligner
 
 job_processor:
-  query_success: data_pipeline.utils.db_queries.mark_annotation_processed
+  dst_bucket_folder: cloud_annotations
+  bucket_root_folder: encord_cloud_data
+  query_success: data_pipeline.utils.db_queries.insert_cloud_annotation_row
   query_failure: data_pipeline.utils.db_queries.write_exception
-  allow_overwriting: true 
-  dry_run: true
+  allow_overwriting: false 
+  dry_run: false
+  encord_payload_dst: ${hydra:runtime.cwd}/configs/encord_payload.json 
+  cuda_device: 1
 
-secrets:
-  dotenv: ${hydra:runtime.cwd}/configs/cloud_annotation/.env
+
+
