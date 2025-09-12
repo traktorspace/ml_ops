@@ -9,7 +9,7 @@ import rasterio
 from loguru import logger
 from tqdm import tqdm
 
-from data_pipeline.utils.path_utils import fetch_data_pair
+from annotation_pipeline.utils.path_utils import fetch_data_pair
 
 
 def validate_tiffs(cube_path: Path, annotation_path: Path) -> tuple[bool, bool]:

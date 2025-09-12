@@ -212,3 +212,5 @@ __marimo__/
 *.ed25519
 *.csv
 *.txt
+*.zip
+*.json

@@ -8,9 +8,9 @@ hydra:
   output_subdir: null
 
 criteria:
-  artifact_destination: ${as_path:/home/mlops/repos/ml_ops/data_pipeline/dump_dataset}
+  artifact_destination: ${as_path:/home/mlops/repos/ml_ops/annotation_pipeline/dump_dataset}
   # ${as_path:/bigdata/datasets_analytics/clouds/hf1a_reflectance/pipeline_test}
-  prod_selection_query: data_pipeline.utils.db_queries.fetch_encord_uploaded_but_not_downloaded_products_from_annotation_db
+  prod_selection_query: annotation_pipeline.utils.db_queries.fetch_encord_uploaded_but_not_downloaded_products_from_annotation_db
   query_params:
     min_cloud: 0
     max_cloud: 10
@@ -29,8 +29,8 @@ logging:
     - frame-aligner
 
 job_processor:
-  query_success: data_pipeline.utils.db_queries.mark_annotation_processed
-  query_failure: data_pipeline.utils.db_queries.write_exception
+  query_success: annotation_pipeline.utils.db_queries.mark_annotation_processed
+  query_failure: annotation_pipeline.utils.db_queries.write_exception
   allow_overwriting: true 
   dry_run: false
   use_cloud_data_source: true 

@@ -11,7 +11,7 @@ secrets:
   dotenv: ${hydra:runtime.cwd}/configs/cloud_annotation/.env
 
 criteria:
-  prod_selection_query: data_pipeline.utils.db_queries.fetch_latest_approved_products
+  prod_selection_query: annotation_pipeline.utils.db_queries.fetch_latest_approved_products
   query_params:
     min_cloud: 5
     max_cloud: 20
@@ -33,8 +33,8 @@ logging:
 job_processor:
   dst_bucket_folder: cloud_annotations
   bucket_root_folder: encord_cloud_data
-  query_success: data_pipeline.utils.db_queries.insert_cloud_annotation_row
-  query_failure: data_pipeline.utils.db_queries.write_exception
+  query_success: annotation_pipeline.utils.db_queries.insert_cloud_annotation_row
+  query_failure: annotation_pipeline.utils.db_queries.write_exception
   allow_overwriting: false 
   dry_run: false
   encord_payload_dst: ${hydra:runtime.cwd}/configs/encord_payload.json 

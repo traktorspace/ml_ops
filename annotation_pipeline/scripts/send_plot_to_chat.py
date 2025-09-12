@@ -1,4 +1,4 @@
-# data_pipeline/scripts/send_to_chat.py
+# annotation_pipeline/scripts/send_to_chat.py
 #
 # Usage examples
 # --------------
@@ -32,12 +32,12 @@ matplotlib.use('Agg')  # head-less backend
 from dotenv import dotenv_values
 from loguru import logger
 
-from data_pipeline.utils.path_utils import fetch_data_pair
-from data_pipeline.utils.slack_utils import (
+from annotation_pipeline.utils.path_utils import fetch_data_pair
+from annotation_pipeline.utils.slack_utils import (
     post_new_message_and_get_thread_id,
     upload_file_to_channel,
 )
-from data_pipeline.utils.viz_utils import (
+from annotation_pipeline.utils.viz_utils import (
     build_annotation_preview,
     build_cube_and_mask_preview,
 )

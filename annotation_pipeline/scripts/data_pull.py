@@ -30,32 +30,32 @@ from tqdm import (
     tqdm,
 )
 
-from data_pipeline.utils.cube_utils import (
+from annotation_pipeline.utils.cube_utils import (
     mismatched_products,
 )
-from data_pipeline.utils.db_utils import (
+from annotation_pipeline.utils.db_utils import (
     exec_query,
     init_connection,
 )
-from data_pipeline.utils.encord_utils import (
+from annotation_pipeline.utils.encord_utils import (
     fetch_annotation_signed_url,
     fetch_annotations_duplicates,
     fetch_annotations_from_workflow_stages,
     fetch_client,
     fetch_project,
 )
-from data_pipeline.utils.gcloud_utils import BucketWrapper
-from data_pipeline.utils.hydra_helpers import (
+from annotation_pipeline.utils.gcloud_utils import BucketWrapper
+from annotation_pipeline.utils.hydra_helpers import (
     load_attr,
 )
-from data_pipeline.utils.job_processor import (
+from annotation_pipeline.utils.job_processor import (
     JobPullProcessor,
 )
-from data_pipeline.utils.path_utils import (
+from annotation_pipeline.utils.path_utils import (
     parse_s3_path,
     tif_exists,
 )
-from data_pipeline.utils.slack_utils import (
+from annotation_pipeline.utils.slack_utils import (
     post_new_message_and_get_thread_id,
     upload_file_to_channel,
     wrap_msg_with_project_name,

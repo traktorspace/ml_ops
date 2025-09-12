@@ -3,7 +3,7 @@
 # LXX.tif, LXX_annotation.tif and the overlay of the two
 # Useful to detect misalignment or bad annotations
 
-# python3 scripts/store_pairs_lookup.py.py
+# python3 scripts/pairs_lookup.py
 # -imgpath=/bigdata/datasets_analytics/clouds/hf1a_reflectance/pipeline_test
 # -dumpdir=./media_test/
 import matplotlib
@@ -16,8 +16,8 @@ from pathlib import Path
 from loguru import logger
 from tqdm import tqdm
 
-from data_pipeline.utils.path_utils import fetch_data_pair
-from data_pipeline.utils.viz_utils import build_cube_and_mask_preview
+from annotation_pipeline.utils.path_utils import fetch_data_pair
+from annotation_pipeline.utils.viz_utils import build_cube_and_mask_preview
 
 
 def collect_prod_names(
@@ -46,34 +46,42 @@ def collect_prod_names(
     return requested
 
 
-def main():
+def main() -> None:
     try:
         parser = argparse.ArgumentParser()
         parser.add_argument(
-            '-imgpath',
+            '--imgpath',
             type=Path,
             required=True,
-            help='Path where your pairs of img+annotation are stored',
+            help='Root folder of products',
         )
         parser.add_argument(
-            '-dumpdir',
+            '--dumpdir', type=Path, required=True, help='Where to save previews'
+        )
+
+        # Mutually-exclusive mode flags
+        mode = parser.add_mutually_exclusive_group(required=True)
+        mode.add_argument(
+            '--all', action='store_true', help='Process every sub-folder'
+        )
+        mode.add_argument(
+            '--listfile',
             type=Path,
-            required=True,
-            help='Path where you want to store the plots of each cube+annotation pair',
+            help='Path to txt file containing a subset of folder names, one per line',
         )
 
         args = parser.parse_args()
 
         if not args.imgpath.exists():
-            raise FileNotFoundError('Img path not found')
+            raise FileNotFoundError(f'Image path {args.imgpath} not found')
 
-        prod_names = [p.name for p in list(Path(args.imgpath).glob('*'))]
-        logger.info(f'Found {len(prod_names)}')
+        prod_names = collect_prod_names(args.imgpath, args.all, args.listfile)
+        logger.info(f'Found {len(prod_names)} product(s)')
 
-        for prod_name in tqdm(prod_names):
+        for prod_name in tqdm(prod_names, desc='Generating previews'):
             cube_path, annotation_path = fetch_data_pair(
-                root_dir=Path(args.imgpath),
-                prod_name=str(prod_name),
+                root_dir=args.imgpath,
+                prod_name=prod_name,
             )
 
             buf = build_cube_and_mask_preview(
@@ -89,7 +97,7 @@ def main():
 
         logger.info('Operation completed!')
 
-    except Exception:
+    except Exception:  # noqa: BLE001
         logger.exception(traceback.format_exc())
 
 

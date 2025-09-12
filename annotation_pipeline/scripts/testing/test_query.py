@@ -6,17 +6,17 @@ from dotenv import (
     dotenv_values,
 )
 
-from data_pipeline.utils.db_queries import (
+from annotation_pipeline.utils.db_queries import (
     fetch_all_products_from_annotation_db,
     fetch_latest_approved_products,
 )
-from data_pipeline.utils.db_utils import (
+from annotation_pipeline.utils.db_utils import (
     exec_query,
     init_connection,
 )
 
 env = dotenv_values(
-    '/home/mlops/repos/ml_ops/data_pipeline/configs/cloud_annotation/.env'
+    '/home/mlops/repos/ml_ops/annotation_pipeline/configs/cloud_annotation/.env'
 )
 db_conn = init_connection(env)
 res = exec_query(
@@ -29,6 +29,10 @@ res = exec_query(
         'created_before': '2025-09-05T00:00:00Z',
     },
 )
+
+if res is None:
+    raise RuntimeError('No results have been yielded from the query')
+
 print(f'Found {len(res)} results')
 pprint(random.choices(res, k=5))
 
@@ -38,6 +42,10 @@ all_ann = exec_query(
     db_conn,
     fetch_all_products_from_annotation_db,
 )
+
+if all_ann is None:
+    raise RuntimeError('No annotations have been yielded from the query')
+
 print(f'Found {len(all_ann)} annotations')
 all_annotation_in_db = [Path(r[1]) for r in all_ann]
 

@@ -31,19 +31,19 @@ from rasterio.errors import (
 )
 from tqdm import tqdm
 
-from data_pipeline.utils.db_utils import exec_query, init_connection
-from data_pipeline.utils.encord_utils import (
+from annotation_pipeline.utils.db_utils import exec_query, init_connection
+from annotation_pipeline.utils.encord_utils import (
     fetch_annotations_duplicates,
     fetch_annotations_from_workflow_stages,
     fetch_client,
     fetch_project,
 )
-from data_pipeline.utils.gcloud_utils import fetch_google_bucket
-from data_pipeline.utils.hydra_helpers import (
+from annotation_pipeline.utils.gcloud_utils import fetch_google_bucket
+from annotation_pipeline.utils.hydra_helpers import (
     load_attr,
 )
-from data_pipeline.utils.job_processor import JobPushProcessor
-from data_pipeline.utils.slack_utils import (
+from annotation_pipeline.utils.job_processor import JobPushProcessor
+from annotation_pipeline.utils.slack_utils import (
     post_new_message_and_get_thread_id,
     upload_file_to_channel,
     wrap_msg_with_project_name,

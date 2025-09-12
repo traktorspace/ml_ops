@@ -5,10 +5,10 @@ from pathlib import Path
 from dotenv import dotenv_values
 from loguru import logger
 
-from data_pipeline.utils.slack_utils import (
+from annotation_pipeline.utils.slack_utils import (
     upload_file_to_channel,
 )
-from data_pipeline.utils.viz_utils import build_cube_and_mask_preview
+from annotation_pipeline.utils.viz_utils import build_cube_and_mask_preview
 
 
 def main():

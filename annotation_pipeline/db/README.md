@@ -7,8 +7,8 @@
 - [TODO/WIP](#todowip)
 
 
-The annotation schema can be found under the production database. For this reason all the previous migrations were declared under the [`spacelab-pipeline` repo](https://github.com/traktorspace/spacelab-pipeline), which currently handles it.\
-If you want to read more information about the database please have a look at its dedicated [README](https://github.com/traktorspace/spacelab-pipeline/blob/develop/packages/hyperfield-db/README.md).\
+The annotation schema can be found under the production database. For this reason all the previous migrations were declared under the [spacelab-pipeline repo](https://github.com/traktorspace/spacelab-pipeline), which currently handles it.\
+If you want to read more information about the database please have a look at its dedicated [README](https://github.com/traktorspace/spacelab-pipeline/blob/develop/packages/hyperfield-db/README.md).
 
 For the annotation pipeline, a dedicated schema has been created: the `annotations` schema. Please create a dedicated table under that schema for your annotation project.
 

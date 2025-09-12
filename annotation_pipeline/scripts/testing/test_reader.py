@@ -4,10 +4,10 @@ from pathlib import Path
 from dotenv import load_dotenv
 from fs.memoryfs import MemoryFS
 
-from data_pipeline.utils.gcloud_utils import (
+from annotation_pipeline.utils.gcloud_utils import (
     BucketWrapper,
 )
-from data_pipeline.utils.path_utils import unzip_any
+from annotation_pipeline.utils.path_utils import unzip_any
 
 
 def main():
@@ -28,7 +28,7 @@ def main():
     # with open('f1.png', 'wb') as f:
     #     f.write(f1.read() if hasattr(f1, "read") else f1)
     load_dotenv(
-        '/home/mlops/repos/ml_ops/data_pipeline/configs/cloud_annotation/.env'
+        '/home/mlops/repos/ml_ops/annotation_pipeline/configs/cloud_annotation/.env'
     )
     # print(outdir)
     # # for path, dirs, files in mem.walk("/", search="depth"):

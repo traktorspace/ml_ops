@@ -14,24 +14,24 @@ from google.cloud.storage.bucket import Bucket
 from loguru import logger
 from rasterio.io import MemoryFile
 
-from data_pipeline.utils.cube_utils import (
+from annotation_pipeline.utils.cube_utils import (
     align_label_with_new_reference,
     apply_nan_mask_to_annotation,
     extract_bands,
     get_aligner,
     store_annotation,
 )
-from data_pipeline.utils.db_utils import exec_query
-from data_pipeline.utils.encord_utils import (
+from annotation_pipeline.utils.db_utils import exec_query
+from annotation_pipeline.utils.encord_utils import (
     ImageGroup,
     ImageGroupPayload,
     get_annotation_tensor,
 )
-from data_pipeline.utils.gcloud_utils import (
+from annotation_pipeline.utils.gcloud_utils import (
     BucketWrapper,
     upload_folder_to_bucket,
 )
-from data_pipeline.utils.path_utils import (
+from annotation_pipeline.utils.path_utils import (
     ensure_dir,
     infer_product_level,
     make_symlink,
@@ -56,7 +56,7 @@ class JobStats:
         getattr(self, bucket).append(product)
 
     def summary(self) -> dict[str, int]:
-        """{bucket → #items} – convenience for logging/printing."""
+        """{bucket → #items} - convenience for logging/printing."""
         return {name: len(getattr(self, name)) for name in self.__annotations__}
 
     def _extra_sections(self) -> dict[str, list[str]]:
