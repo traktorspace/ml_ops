@@ -52,3 +52,4 @@ All the migrations are handled with [`dbmate`](https://github.com/amacneil/dbmat
 ## TODO/WIP
 - [ ] Create a script to refresh foreign key in db so that annotations always points to latest file 
   - [ ]   Currently this is done by sql query at runtime that takes most recent product
+- [ ]  Add a user that can only work on the annotation schemas!
