@@ -7,6 +7,8 @@
   - [How it looks in this repository](#how-it-looks-in-this-repository)
 - [Installation \& Setup](#installation--setup)
   - [1. Dependencies](#1-dependencies)
+    - [Option 1-A - Local installation](#option-1-a---local-installation)
+    - [Option 2-A - Dockerized installation](#option-2-a---dockerized-installation)
   - [2. Cloud setup](#2-cloud-setup)
   - [3. Pipeline setup](#3-pipeline-setup)
 
@@ -35,6 +37,8 @@ By codifying each step—data extraction, format conversion, annotation sync, tr
 This repo uses [uv](https://docs.astral.sh/uv/getting-started/installation/) as package manager, please verify to have it already installed.
 
 ### 1. Dependencies
+
+#### Option 1-A - Local installation
 1.  Create a virtualenv with `uv` using
     ```
     uv venv
@@ -52,6 +56,30 @@ This repo uses [uv](https://docs.astral.sh/uv/getting-started/installation/) as 
     ```
     pre-commit install 
     ``` 
+
+#### Option 2-A - Dockerized installation
+1. Install [podman](https://podman.io/docs/installation)
+2. Build the container
+    ```shell
+    podman build --ssh default=$SSH_AUTH_SOCK -t mlops .
+    ```
+
+    **Note:** In case off ssh problems try
+    ```shell
+    # Start SSH agent (if not already running)
+    eval "$(ssh-agent -s)"
+
+    # Add your SSH key
+    ssh-add ~/.ssh/id_ed25519
+
+    # Check SSH agent has keys
+    ssh-add -l
+
+    # Verify $SSH_AUTH_SOCK is set
+    echo $SSH_AUTH_SOCK
+    ```
+3. WIP
+
 
 ### 2. Cloud setup
 
