@@ -4,16 +4,13 @@
 
 # ML Ops
 - [What is ML Ops?](#what-is-ml-ops)
-  - [What is ML Ops?](#what-is-ml-ops-1)
   - [How it looks in this repository](#how-it-looks-in-this-repository)
 - [Installation \& Setup](#installation--setup)
   - [1. Dependencies](#1-dependencies)
-- [2. Cloud setup](#2-cloud-setup)
-- [3. Pipeline setup](#3-pipeline-setup)
+  - [2. Cloud setup](#2-cloud-setup)
+  - [3. Pipeline setup](#3-pipeline-setup)
 
 ## What is ML Ops?
-
-### What is ML Ops?  
 
 MLOps (Machine-Learning Operations) adapts the proven ideas of DevOps-version control, automated testing, CI/CD, monitoring-to the life-cycle of data-driven models.  It treats datasets, training code, model artefacts and evaluation metrics as first-class, versioned entities, so that every change (be it a new batch of data or a tweak in hyper-parameters) can be reproduced, audited and rolled back just like a software release.
 
@@ -56,7 +53,7 @@ This repo uses [uv](https://docs.astral.sh/uv/getting-started/installation/) as 
     pre-commit install 
     ``` 
 
-## 2. Cloud setup
+### 2. Cloud setup
 
 The images can be uploaded in Encord in many ways, the one used in this project is through the [Encord GCP Integration](https://docs.encord.com/platform-documentation/General/annotate-data-integrations/annotate-gcp-integration). In this way it's possible to let Encord know where the images are located in your bucket. [This is an example](https://docs.encord.com/platform-documentation/Index/add-files/index-register-cloud-data#image-groups) of how Encord expects these files declared for image groups.
 
@@ -69,7 +66,7 @@ For annotation-related buckets please contact either _Tommaso Canova_ or _Arthur
     gcloud auth application-default login
     ```
 
-## 3. Pipeline setup
+### 3. Pipeline setup
 Before running an annotation pushing/pulling script, it's necessary to have a `.env` file with all the necessary credentials that looks like this:
 
 ```shell
