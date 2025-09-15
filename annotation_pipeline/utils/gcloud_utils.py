@@ -186,6 +186,85 @@ def list_blob_folders_at_depth(bucket: Bucket, depth: int) -> list:
     return prefixes
 
 
+def upload_file_to_bucket(
+    src: str | Path | FS,
+    gcp_dst_folder: str,
+    bucket: Bucket,
+    *,
+    memfs_file: str | None = None,
+    overwrite: bool = False,
+) -> str:
+    """
+    Upload a single file to `bucket` under the prefix `gcp_dst_folder`.
+
+    Parameters
+    ----------
+    src : str | Path | fs.base.FS
+        • If str / Path  → absolute or relative path to the local file.
+        • If FS          → a PyFilesystem object; `memfs_file` must be the
+                           path of the file *inside that FS*.
+    gcp_dst_folder : str
+        Destination folder (prefix) in the bucket, e.g. "datasets/raw".
+        The file keeps its original filename.
+    bucket : google.cloud.storage.bucket.Bucket
+        Target bucket instance.
+    memfs_file : str | None, default None
+        Only used when *src* is an FS; path of the file inside that FS.
+    overwrite : bool, default False
+        If False and the blob already exists, the upload is skipped.
+
+    Returns
+    -------
+    str
+        The full blob name that was created / reused in the bucket.
+    """
+    if isinstance(src, (str, Path)):
+        p = Path(src).expanduser().resolve()
+        if not p.is_file():
+            raise FileNotFoundError(p)
+
+        filename = p.name
+        blob_name = f'{gcp_dst_folder.rstrip("/")}/{filename}'
+        blob = bucket.blob(blob_name)
+
+        if blob.exists() and not overwrite:
+            logger.warning(
+                f'Skip: gs://{bucket.name}/{blob_name} already exists.'
+            )
+            return blob_name
+
+        logger.info(f'Uploading → gs://{bucket.name}/{blob_name}')
+        blob.upload_from_filename(str(p))
+
+    # ----------------------------------------- source — PyFilesystem -------
+    elif isinstance(src, FS):
+        if memfs_file is None:
+            raise ValueError('memfs_file must be provided when src is an FS')
+        if not src.exists(memfs_file):
+            raise FileNotFoundError(memfs_file)
+
+        filename = Path(memfs_file).name
+        blob_name = f'{gcp_dst_folder.rstrip("/")}/{filename}'
+        blob = bucket.blob(blob_name)
+
+        if blob.exists() and not overwrite:
+            logger.warning(
+                f'Skip: gs://{bucket.name}/{blob_name} already exists.'
+            )
+            return blob_name
+
+        logger.info(f'Uploading → gs://{bucket.name}/{blob_name}')
+        with src.openbin(memfs_file) as fp:
+            blob.upload_from_file(fp)
+
+    # ----------------------------------------------------- wrong type ------
+    else:
+        raise TypeError('src must be str | Path | fs.base.FS')
+
+    logger.success(f'Uploaded gs://{bucket.name}/{blob_name}')
+    return blob_name
+
+
 @dataclass(slots=True)
 class BucketWrapper:
     project_name: str = ''
