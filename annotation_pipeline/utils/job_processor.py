@@ -379,10 +379,9 @@ class JobPullProcessor:
                 )
             self.memfs.removetree('./downloads/')
         # 5) Update db entry
-        # TODO: UNCOMMENT SUCCESS QUERY!
-        # exec_query(
-        #     self.db_conn, self.q_success, params={'annotation_id': db_id}
-        # )
+        exec_query(
+            self.db_conn, self.q_success, params={'annotation_id': db_id}
+        )
         self.stats.add('correctly_processed', job['prodname'])
 
     def __del__(self) -> None:

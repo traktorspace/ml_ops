@@ -263,22 +263,25 @@ def main() -> None:
         # Iterate through products                                           #
         # ------------------------------------------------------------------ #
         for prod in prods:
-            if args.annotation_only:
-                push_annotation_preview(
-                    prod_name=prod,
-                    root_dir=args.imgpath,
-                    slack_token=slack_token,
-                    channel_id=slack_channel_id,
-                    thread_ts=thread_ts,
-                )
-            else:
-                push_product_preview(
-                    prod_name=prod,
-                    root_dir=args.imgpath,
-                    slack_token=slack_token,
-                    channel_id=slack_channel_id,
-                    thread_ts=thread_ts,
-                )
+            try:
+                if args.annotation_only:
+                    push_annotation_preview(
+                        prod_name=prod,
+                        root_dir=args.imgpath,
+                        slack_token=slack_token,
+                        channel_id=slack_channel_id,
+                        thread_ts=thread_ts,
+                    )
+                else:
+                    push_product_preview(
+                        prod_name=prod,
+                        root_dir=args.imgpath,
+                        slack_token=slack_token,
+                        channel_id=slack_channel_id,
+                        thread_ts=thread_ts,
+                    )
+            except Exception as e:
+                logger.error(f'ERROR: {e}')
 
         logger.success('Upload completed!')
 
