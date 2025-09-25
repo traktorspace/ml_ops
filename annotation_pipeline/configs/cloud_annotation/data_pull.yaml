@@ -8,7 +8,7 @@ hydra:
   output_subdir: null
 
 criteria:
-  artifact_destination: ${as_path:/bigdata/cloud_test/hf1a_cloud_dataset}
+  artifact_destination: ${as_path:/bigdata/cloud_test/hf1a_cloud_dataset/training_set}
   # ${as_path:/bigdata/datasets_analytics/clouds/hf1a_reflectance/pipeline_test}
   prod_selection_query: annotation_pipeline.utils.db_queries.fetch_encord_uploaded_but_not_downloaded_products_from_annotation_db
 logging:
@@ -34,7 +34,7 @@ job_processor:
   save_only_annotation: false 
 
 secrets:
-  dotenv: ${hydra:runtime.cwd}/configs/cloud_annotation/.env
+  dotenv: ${as_path:/home/mlops/repos/ml_ops/annotation_pipeline/configs/cloud_annotation/.env}
 
 debug_settings:
   limit_product_processed: true

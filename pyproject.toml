@@ -5,6 +5,7 @@ description = "This project contains all the automations needed to perform MLOps
 readme = "README.md"
 requires-python = ">=3.12,<3.13"
 dependencies = [
+    "cartopy>=0.25.0",
     "encord>=0.1.170",
     "fs>=2.4.16",
     "google-cloud-storage>=3.1.1",

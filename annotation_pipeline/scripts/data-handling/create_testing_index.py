@@ -6,12 +6,18 @@ import argparse
 import traceback
 from pathlib import Path
 from pprint import pprint
+from typing import cast
 
+import cartopy.crs as ccrs
+import cartopy.feature as cfeature
+import geopandas as gpd
 import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
 import rasterio
+from cartopy.mpl.geoaxes import GeoAxes
 from loguru import logger
+from shapely.geometry import Point
 from tqdm import tqdm
 
 VALUE2CLASS = {
@@ -96,10 +102,25 @@ def constrained_sample(
     rng: np.random.Generator,
 ) -> pd.DataFrame:
     """
-    Randomly draw *n_samples* rows from *df* with the following limits:
-      • at most *max_cloudy* rows whose total_cloud_coverage ≥ 90
-      • at most *max_clear* rows whose Fill/Clear ≥ 99
-    Remaining rows are filled at random from the rest.
+    Randomly draw a specified number of rows from a DataFrame with constraints.
+
+    Parameters
+    ----------
+    df :
+        Input DataFrame containing cloud-mask statistics.
+    n_samples :
+        Total number of rows to sample.
+    max_cloudy :
+        Maximum number of rows with total_cloud_coverage ≥ 90.
+    max_clear :
+        Maximum number of rows with Fill/Clear ≥ 99.
+    rng :
+        Random number generator for reproducibility.
+
+    Returns
+    -------
+    pd.DataFrame
+        A DataFrame containing the sampled rows.
     """
     is_cloudy = df['total_cloud_coverage'] >= 90
     is_clear = df['Fill/Clear'] >= 99
@@ -159,9 +180,27 @@ def save_outputs(
     out_dir: Path,
     write_csv: bool,
     write_plots: bool,
+    annotations: list[Path],
 ) -> None:
     """
-    Depending on the flags, create a CSV and/or one or two figures.
+    Save outputs such as CSV files and plots based on the provided flags.
+
+    Parameters
+    ----------
+    df :
+        DataFrame containing cloud-mask statistics.
+    out_dir :
+        Directory where outputs will be saved.
+    write_csv :
+        Flag to indicate whether to save the statistics as a CSV file.
+    write_plots :
+        Flag to indicate whether to generate and save plots.
+    annotations :
+        List of paths to annotation files.
+
+    Returns
+    -------
+    None
     """
     out_dir.mkdir(parents=True, exist_ok=True)
 
@@ -211,7 +250,7 @@ def save_outputs(
     # Overall cloud coverage hist
     fig, ax = plt.subplots(figsize=(8, 5))
     ax.hist(
-        df['total_cloud_coverage'].values,
+        df['total_cloud_coverage'].values,  # type: ignore
         bins=20,
         weights=weights,
         color='steelblue',
@@ -227,6 +266,64 @@ def save_outputs(
     fig.savefig(fig_path, dpi=300)
     plt.close(fig)
     logger.info(f'Cloud-coverage histogram written to {fig_path}')
+
+    # Generate a heatmap of the world based on annotation coordinates
+    coords = []
+    for ann in annotations:
+        with rasterio.open(ann) as src:
+            # Extract the center of the raster as the coordinate in float degrees
+            bounds = src.bounds
+            lon = float((bounds.left + bounds.right) / 2)
+            lat = float((bounds.top + bounds.bottom) / 2)
+            coords.append((lon, lat))
+
+    # Create a GeoDataFrame for the coordinates
+    gdf = gpd.GeoDataFrame(
+        {'geometry': [Point(lon, lat) for lon, lat in coords]},
+        crs='EPSG:4326',  # WGS84
+    )
+
+    # Plot the heatmap
+    fig = plt.figure(figsize=(14, 8))
+    ax = cast(GeoAxes, plt.axes(projection=ccrs.PlateCarree()))
+    ax.set_global()
+    ax.add_feature(cfeature.LAND, edgecolor='black', facecolor='lightgray')
+    ax.add_feature(cfeature.OCEAN, facecolor='lightblue')
+    ax.coastlines(resolution='110m', linewidth=0.8)
+    gridlines = ax.gridlines(
+        draw_labels=True, linewidth=0.5, color='gray', alpha=0.5, linestyle='--'
+    )
+    gridlines.top_labels = False
+    gridlines.right_labels = False
+    gridlines.xlabel_style = {'size': 10, 'color': 'gray'}
+    gridlines.ylabel_style = {'size': 10, 'color': 'gray'}
+
+    x, y = zip(
+        *[
+            (cast(Point, point).x, cast(Point, point).y)
+            for point in gdf.geometry
+        ]
+    )
+    heatmap, xedges, yedges = np.histogram2d(x, y, bins=100)
+    im = ax.imshow(
+        heatmap.T,
+        extent=[min(xedges), max(xedges), min(yedges), max(yedges)],
+        origin='lower',
+        transform=ccrs.PlateCarree(),
+        cmap='viridis',
+        alpha=0.6,
+    )
+
+    cbar = fig.colorbar(im, ax=ax, orientation='vertical', shrink=0.7, pad=0.05)
+    cbar.set_label('Frequency', fontsize=12)
+    ax.set_title(
+        'Heatmap of Annotation Locations', fontsize=14, fontweight='bold'
+    )
+    # Save the figure
+    fig_path = out_dir / 'annotation_heatmap.png'
+    plt.savefig(fig_path, dpi=300, bbox_inches='tight')
+    plt.close(fig)
+    logger.info(f'Annotation heatmap written to {fig_path}')
 
 
 def main():
@@ -283,6 +380,7 @@ def main():
             out_dir=args.out_dir,
             write_csv=args.write_csv,
             write_plots=args.write_plots,
+            annotations=annotations,
         )
 
         if args.n_samples is not None and args.n_samples > 0:
